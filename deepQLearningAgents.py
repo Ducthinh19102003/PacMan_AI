@@ -11,7 +11,7 @@ import numpy as np
 from deepQNetwork import MLP, CNN
 
 class PacmanMLPQAgent(PacmanQAgent):
-    def __init__(self, layout_input="smallGrid", target_update_rate=300, doubleQ=True, train=True, **args):
+    def __init__(self, layout_input="smallGrid", target_update_rate=300, doubleQ=True, train=False, **args):
         PacmanQAgent.__init__(self, **args)
         self.model = None
         self.target_model = None
@@ -20,14 +20,15 @@ class PacmanMLPQAgent(PacmanQAgent):
         self.epsilon_explore = 1.0
         self.epsilon_start = 0.6
         self.epsilon_end = 0.1
-        self.decay_episode = int(self.numTraining * 0.9)
-        self.epsilon_decay_rate = (self.epsilon_start - self.epsilon_end) / self.decay_episode
+        self.train = train
+        if self.train:
+            self.decay_episode = int(self.numTraining * 0.9)
+            self.epsilon_decay_rate = (self.epsilon_start - self.epsilon_end) / self.decay_episode
         self.discount = 0.9
         self.update_frequency = 3
         self.counts = None
         self.replay_memory = ReplayBuffer(500000)
         self.min_transitions_before_training = 10000
-        self.train = train
         self.layout_input = layout_input
         self.save_frequency = 2000
 
@@ -35,6 +36,23 @@ class PacmanMLPQAgent(PacmanQAgent):
             self.min_transitions_before_training = 0
             self.epsilon0 = 0
             self.alpha = 0
+        else:
+            wandb.init(
+            # set the wandb project where this run will be logged
+            project="Double Deep Q-Learning experiments",
+            name=self.input.input_type,
+            
+            # track hyperparameters and run metadata
+            config={
+            "learning_rate": 0.05,
+            "discount_factor": 0.9,
+            "epsilon_start": 0.6,
+            "epsilon_end": 0.1,
+            "architecture": "MLP",
+            "epochs": 10000,
+            }
+        )
+            
             
         self.td_error_clipping = 50
         print(torch.cuda.is_available())
@@ -54,30 +72,16 @@ class PacmanMLPQAgent(PacmanQAgent):
         if self.doubleQ:
             self.target_update_rate = -1
 
-        wandb.init(
-            # set the wandb project where this run will be logged
-            project="Double Deep Q-Learning experiments",
-            name=self.input.input_type,
-            
-            # track hyperparameters and run metadata
-            config={
-            "learning_rate": 0.05,
-            "discount_factor": 0.9,
-            "epsilon_start": 0.6,
-            "epsilon_end": 0.1,
-            "architecture": "MLP",
-            "epochs": 10000,
-            }
-        )
+
 
     def initialize_q_networks(self, state_dim, action_dim=5):
         self.model = MLP(state_dim, action_dim)
         self.target_model = MLP(state_dim, action_dim)
-        path = os.path.join("save_models/", f"MLP_{self.layout_input}_{self.input.input_type}_.pth")
+        path = os.path.join("save_models/", f"MLP_{self.layout_input}_{self.input.input_type}.pth")
         if os.path.exists(path):
             print("Load weights")
-            self.model.model.load_state_dict(torch.load(path))
-            self.target_model.load_state_dict(torch.load(path))
+            self.model.model = torch.load(path, map_location=torch.device('cpu'))
+            self.target_model = torch.load(path, map_location=torch.device('cpu'))
 
     def getQValue(self, state, action):
         """
@@ -221,7 +225,8 @@ class PacmanMLPQAgent(PacmanQAgent):
                     NUM_EPS_UPDATE,windowAvg))
             train_time = (time.time() - self.episodeStartTime)
             print('\tEpisode took %.2f seconds' % train_time)
-            wandb.log({"Average_Reward": windowAvg, "train_time": train_time})
+            if self.train:
+                wandb.log({"Average_Reward": windowAvg, "train_time": train_time})
             self.lastWindowAccumRewards = 0.0
             self.episodeStartTime = time.time()
 
@@ -263,8 +268,24 @@ class PacmanCNNQAgent(PacmanQAgent):
         
         if self.train == False:
             self.min_transitions_before_training = 0
-            self.epsilon_start = self.epsilon_end = 0
+            self.epsilon0 = 0
             self.alpha = 0
+        else:
+            wandb.init(
+            # set the wandb project where this run will be logged
+            project="Double Deep Q-Learning experiments",
+            name=self.input.input_type,
+            
+            # track hyperparameters and run metadata
+            config={
+            "learning_rate": 0.05,
+            "discount_factor": 0.9,
+            "epsilon_start": 0.6,
+            "epsilon_end": 0.1,
+            "architecture": "MLP",
+            "epochs": 10000,
+            }
+        )
             
         self.td_error_clipping = 50
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -282,23 +303,6 @@ class PacmanCNNQAgent(PacmanQAgent):
         self.doubleQ = doubleQ
         if self.doubleQ:
             self.target_update_rate = -1
-
-        wandb.init(
-            # set the wandb project where this run will be logged
-            project="Double Deep Q-Learning experiments",
-            name=self.input.input_type,
-            
-            # track hyperparameters and run metadata
-            config={
-            "learning_rate": 0.05,
-            "discount_factor": 0.9,
-            "epsilon_start": 0.6,
-            "epsilon_end": 0.1,
-            "architecture": "CNN",
-            "epochs": 10000,
-            }
-        )
-
 
     def initialize_q_networks(self, state_dim, action_dim=5):
         self.model = CNN(state_dim, action_dim, self.state_history)
@@ -452,7 +456,8 @@ class PacmanCNNQAgent(PacmanQAgent):
                     NUM_EPS_UPDATE,windowAvg))
             train_time = (time.time() - self.episodeStartTime)
             print('\tEpisode took %.2f seconds' % train_time)
-            wandb.log({"Average_Reward": windowAvg, "train_time": train_time})
+            if self.train:
+                wandb.log({"Average_Reward": windowAvg, "train_time": train_time})
             self.lastWindowAccumRewards = 0.0
             self.episodeStartTime = time.time()
 
